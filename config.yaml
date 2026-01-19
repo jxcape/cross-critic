@@ -1,0 +1,98 @@
+# Cross-Critic Configuration
+
+# 모델 설정
+models:
+  critic:
+    type: opencode  # opencode | codex | api
+    timeout: 300    # 초
+    max_retries: 3
+
+  # 추후 확장용
+  # debate:
+  #   models:
+  #     - opencode
+  #     - claude
+
+# Context 설정
+context:
+  auto_detect: true
+  include_specs: true
+  max_file_size: 100000  # bytes, 이보다 크면 경고
+
+  # 자동 제외 패턴
+  exclude_patterns:
+    - "**/__pycache__/**"
+    - "**/node_modules/**"
+    - "**/.git/**"
+    - "**/*.pyc"
+    - "**/dist/**"
+    - "**/build/**"
+
+# 체크포인트 설정
+checkpoints:
+  auto_mode: false  # true면 모든 체크포인트 자동 통과 (위험!)
+
+# 프롬프트 템플릿 (커스터마이징 가능)
+prompts:
+  plan_review: |
+    ## 계획
+    {plan_content}
+
+    ## 요청
+    위 계획을 비판적으로 리뷰해줘:
+
+    1. **요구사항 누락**: 빠진 요구사항이나 edge case는?
+    2. **해석 오류**: 모호하거나 잘못 해석된 부분은?
+    3. **대안 제시**: 더 나은 접근법이 있다면?
+    4. **잠재적 문제**: 구현 시 예상되는 문제점은?
+    5. **테스트 가능성**: 이 계획으로 테스트 작성이 가능한가?
+
+    구체적인 피드백과 함께 개선 제안을 해줘.
+
+  code_review: |
+    ## Context
+    {context}
+
+    ## 원래 계획
+    {plan_content}
+
+    ## 구현된 코드
+    {code_changes}
+
+    ## 요청
+    구현된 코드를 비판적으로 리뷰해줘:
+
+    1. **계획 일치**: 계획과 구현이 일치하나?
+    2. **버그/Edge case**: 누락된 예외 처리나 edge case는?
+    3. **보안**: 보안 취약점이 있나?
+    4. **성능**: 성능 문제가 예상되는 부분은?
+    5. **가독성**: 코드 구조와 네이밍은 적절한가?
+
+    구체적인 라인/함수를 지적하고 개선 방안을 제시해줘.
+
+  test_generation: |
+    ## Context
+    {context}
+
+    ## 계획
+    {plan_content}
+
+    ## 구현된 코드
+    {code_changes}
+
+    ## 요청
+    이 코드에 대한 테스트 코드를 작성해줘:
+
+    1. **정상 케이스**: 기본 동작 검증
+    2. **Edge case**: 경계값, 빈 입력, 최대값 등
+    3. **에러 케이스**: 예외 상황 처리 검증
+    4. **요구사항 검증**: 계획에 명시된 요구사항 충족 확인
+
+    테스트 프레임워크: pytest
+    파일 형식으로 출력해줘.
+
+# 출력 설정
+output:
+  state_file: ".cross_critic_state.json"
+  log_dir: ".cross_critic_logs"
+  verbose: true
