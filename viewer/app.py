@@ -1,8 +1,10 @@
 """
-Cross-Critic Debate Viewer
+Cross-Critic Viewer
 
-Streamlit 기반 토론 결과 뷰어.
-Side-by-side로 GPT/Claude 결과 비교.
+Streamlit 기반 다기능 뷰어:
+- Debate: GPT/Claude 토론 결과 비교
+- Diff: 코드 리뷰용 diff 시각화
+- History: 세션 히스토리 관리
 
 Usage:
     streamlit run viewer/app.py -- --state /path/to/.cross-critic/debate_state.json
@@ -13,14 +15,18 @@ Usage:
 
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
 import streamlit as st
 
+from viewer.diff import DiffRenderer
+from viewer.history import HistoryViewer
+
 # 페이지 설정
 st.set_page_config(
-    page_title="Cross-Critic Debate",
+    page_title="Cross-Critic",
     page_icon="🎭",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -313,9 +319,8 @@ def render_actions(state: dict, state_path: Path):
         st.rerun()
 
 
-def main():
-    st.title("🎭 Cross-Critic Debate Viewer")
-
+def render_debate_tab():
+    """Debate 탭 렌더링"""
     # 상태 파일 찾기
     state_path = get_state_path()
 
@@ -362,13 +367,107 @@ def main():
     if len(rounds) == 1:
         render_round(rounds[0], 1)
     else:
-        tabs = st.tabs([f"Round {i+1}" for i in range(len(rounds))])
-        for i, tab in enumerate(tabs):
+        round_tabs = st.tabs([f"Round {i+1}" for i in range(len(rounds))])
+        for i, tab in enumerate(round_tabs):
             with tab:
                 render_round(rounds[i], i + 1)
 
     # 액션 버튼
     render_actions(state, state_path)
+
+
+def get_project_dir() -> Path:
+    """프로젝트 디렉토리 가져오기"""
+    env_dir = os.environ.get("PROJECT_DIR")
+    if env_dir:
+        return Path(env_dir)
+
+    state_path = get_state_path()
+    if state_path:
+        # .cross-critic/debate_state.json -> 프로젝트 루트
+        return state_path.parent.parent
+
+    return Path.cwd()
+
+
+def render_diff_tab():
+    """Diff 탭 렌더링"""
+    st.subheader("Code Diff Viewer")
+
+    project_dir = get_project_dir()
+    st.caption(f"📁 Project: {project_dir}")
+
+    # Diff 소스 선택
+    diff_source = st.radio(
+        "Diff Source",
+        options=["Git (staged)", "Git (unstaged)", "Custom"],
+        horizontal=True,
+    )
+
+    diff_text = ""
+
+    if diff_source == "Git (staged)":
+        try:
+            result = subprocess.run(
+                ["git", "diff", "--cached"],
+                capture_output=True,
+                text=True,
+                cwd=project_dir,
+            )
+            diff_text = result.stdout
+        except Exception as e:
+            st.error(f"Git diff failed: {e}")
+
+    elif diff_source == "Git (unstaged)":
+        try:
+            result = subprocess.run(
+                ["git", "diff"],
+                capture_output=True,
+                text=True,
+                cwd=project_dir,
+            )
+            diff_text = result.stdout
+        except Exception as e:
+            st.error(f"Git diff failed: {e}")
+
+    elif diff_source == "Custom":
+        diff_text = st.text_area(
+            "Paste unified diff here:",
+            height=200,
+            placeholder="diff --git a/file.py b/file.py\n...",
+        )
+
+    # Diff 렌더링
+    if diff_text:
+        renderer = DiffRenderer()
+        renderer.render_diff(diff_text)
+    else:
+        st.info("No changes to display.")
+
+
+def render_history_tab():
+    """History 탭 렌더링"""
+    project_dir = get_project_dir()
+    st.caption(f"📁 Project: {project_dir}")
+
+    viewer = HistoryViewer(project_dir)
+    viewer.render()
+
+
+def main():
+    st.title("🎭 Cross-Critic")
+
+    # 메인 탭
+    tab_debate, tab_diff, tab_history = st.tabs(["Debate", "Diff", "History"])
+
+    with tab_debate:
+        render_debate_tab()
+
+    with tab_diff:
+        render_diff_tab()
+
+    with tab_history:
+        render_history_tab()
 
 
 if __name__ == "__main__":
