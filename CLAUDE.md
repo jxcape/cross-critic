@@ -53,6 +53,8 @@ core/               # 핵심 엔진
   context.py        # Context 수집/관리
   parallel_review.py # 병렬 리뷰 엔진
   debate.py         # 경량 토론 엔진
+  multi_model.py    # N-모델 병렬 리뷰 (MultiModelReviewer)
+  history.py        # 세션 히스토리 관리 (HistoryManager)
 
 scripts/            # CLI 스크립트
   gpt_review.py     # GPT 단독 리뷰
@@ -60,7 +62,9 @@ scripts/            # CLI 스크립트
   debate.py         # 멀티라운드 토론 CLI
 
 viewer/             # Streamlit 대시보드
-  app.py            # Side-by-side 비교 뷰어
+  app.py            # 통합 뷰어 (Debate | Diff | History 탭)
+  diff.py           # 코드 리뷰용 Diff 렌더러
+  history.py        # 세션 히스토리 뷰어
 
 workflows/          # 워크플로우 구현체
   full_cycle.py     # Full cycle critic
@@ -142,14 +146,17 @@ uv run python scripts/debate.py serve /path/to/plan.md
 - [x] 프롬프트 품질 개선 (계층적 Step 1-4 구조)
 - [x] DebateEngine (경량 멀티라운드 토론)
 - [x] scripts/debate.py CLI (start/continue/status/reset/serve)
-- [x] viewer/app.py - Streamlit 대시보드 (Side-by-side 비교)
-- [x] 82개 테스트 통과
+- [x] viewer/app.py - 통합 Streamlit 대시보드 (Debate | Diff | History)
+- [x] **MultiModelReviewer** - N개 모델 병렬 호출, 합의 점수 계산
+- [x] **DiffRenderer** - 코드 리뷰용 unified diff 파싱 및 렌더링
+- [x] **HistoryManager** - 세션 히스토리 저장/조회/검색
+- [x] 129개 테스트 통과
 - [x] Claude Code skill (`/cross-critic`)
 
 ### TODO
 - [ ] Adaptive Debate (자동 합의 판단, Severity 기반 진행)
-- [ ] Diff 뷰어 (code review용)
 - [ ] CC Skill 자동 링크 출력
+- [ ] Mermaid 다이어그램 자동 생성
 
 ## Skill 사용법
 

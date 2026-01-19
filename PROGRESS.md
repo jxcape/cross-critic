@@ -2,8 +2,8 @@
 
 ## 현재 상태
 
-**Phase**: M2.5 Debate Light + Viewer 완료
-**Updated**: 2026-01-19 16:30
+**Phase**: M3/M4 병렬 구현 완료
+**Updated**: 2026-01-19 15:00
 
 ## 마일스톤
 
@@ -52,18 +52,19 @@
 - [x] tests/test_debate.py - 21개 테스트
 - [x] 전체 82개 테스트 통과
 
-### M3: Adaptive Debate (예정)
+### M3: Adaptive Debate (진행중)
 
 - [ ] 자동 합의 판단
 - [ ] Severity 기반 자동 진행
 - [ ] 발산 감지
-- [ ] 다중 모델 (3+) 지원
+- [x] **다중 모델 (N개) 지원** - core/multi_model.py, MultiModelReviewer
 
-### M4: 시각화 확장 (예정)
+### M4: 시각화 확장 (완료)
 
 - [x] Streamlit 대시보드 (M2.5에서 완료)
-- [ ] Diff 뷰어 (code review용)
-- [ ] 실행 히스토리
+- [x] **Diff 뷰어** - viewer/diff.py, DiffRenderer
+- [x] **실행 히스토리** - core/history.py, viewer/history.py
+- [x] **통합 탭 UI** - viewer/app.py (Debate | Diff | History)
 - [ ] Mermaid 다이어그램 자동 생성
 
 ---
@@ -72,6 +73,7 @@
 
 | 날짜 | 내용 |
 |------|------|
+| 2026-01-19 | **M3/M4 병렬 구현**: 다중 모델, Diff 뷰어, 히스토리, 탭 통합 (129개 테스트) |
 | 2026-01-19 | **M2.5 + Viewer**: Streamlit 대시보드, Side-by-side 비교, serve 명령어 |
 | 2026-01-19 | **M2.5 Debate Light 완료**: DebateEngine, scripts/debate.py CLI, 82개 테스트 |
 | 2026-01-18 | **M2 병렬 리뷰 완료**: ClaudeClient 개선, ParallelReviewer, 프롬프트 개선, Ralph Loop |
