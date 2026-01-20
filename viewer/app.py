@@ -82,31 +82,61 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-def get_state_path() -> Path | None:
-    """상태 파일 경로 가져오기"""
-    # 1. 환경변수
-    env_path = os.environ.get("DEBATE_STATE")
-    if env_path:
-        return Path(env_path)
+def get_state_path(filename: str = "debate_state.json") -> Path | None:
+    """상태 파일 경로 가져오기 (세션 상태 활용)"""
+    # 세션 상태 키
+    session_key = f"state_path_{filename}"
 
-    # 2. 커맨드라인 인자
-    if "--state" in sys.argv:
-        idx = sys.argv.index("--state")
-        if idx + 1 < len(sys.argv):
-            return Path(sys.argv[idx + 1])
+    # 1. 세션 상태에 저장된 경로가 있으면 우선 사용
+    if session_key in st.session_state:
+        cached_path = Path(st.session_state[session_key])
+        if cached_path.exists():
+            return cached_path
 
-    # 3. 현재 디렉토리에서 찾기
+    # 2. 환경변수 (debate_state.json일 때만)
+    if filename == "debate_state.json":
+        env_path = os.environ.get("DEBATE_STATE")
+        if env_path and Path(env_path).exists():
+            st.session_state[session_key] = env_path
+            return Path(env_path)
+
+        # 3. 커맨드라인 인자
+        if "--state" in sys.argv:
+            idx = sys.argv.index("--state")
+            if idx + 1 < len(sys.argv):
+                arg_path = sys.argv[idx + 1]
+                if Path(arg_path).exists():
+                    st.session_state[session_key] = arg_path
+                    return Path(arg_path)
+
+    # 4. 현재 디렉토리에서 찾기
     cwd = Path.cwd()
-    default_path = cwd / ".cross-critic" / "debate_state.json"
+    default_path = cwd / ".cross-critic" / filename
     if default_path.exists():
+        st.session_state[session_key] = str(default_path)
         return default_path
 
-    # 4. specs/ 디렉토리 체크 (cross-critic 프로젝트 내부)
-    specs_path = cwd / "specs" / ".cross-critic" / "debate_state.json"
+    # 5. specs/ 디렉토리 체크 (cross-critic 프로젝트 내부)
+    specs_path = cwd / "specs" / ".cross-critic" / filename
     if specs_path.exists():
+        st.session_state[session_key] = str(specs_path)
         return specs_path
 
     return None
+
+
+def set_state_path(path: str, filename: str = "debate_state.json") -> bool:
+    """수동으로 상태 파일 경로 설정 (세션에 저장)"""
+    session_key = f"state_path_{filename}"
+    if Path(path).exists():
+        st.session_state[session_key] = path
+        return True
+    return False
+
+
+def get_code_state_path() -> Path | None:
+    """Code review state 파일 경로 가져오기"""
+    return get_state_path("code_review_state.json")
 
 
 def load_state(state_path: Path) -> dict | None:
@@ -121,29 +151,37 @@ def load_state(state_path: Path) -> dict | None:
 
 
 def parse_steps(content: str) -> dict[str, str]:
-    """응답에서 Step 1-4 파싱"""
+    """응답에서 Step 1-4 파싱 (GPT/Claude 마크다운 형식 모두 지원)"""
+    import re
+
     steps = {}
     current_step = None
     current_content = []
 
+    # Step 헤더 패턴 (## Step 1:, Step 1:, ### Step 1 등)
+    step1_pattern = re.compile(r'(^#{1,3}\s*)?Step\s*1|Fatal\s*Flaw|치명적\s*결함', re.IGNORECASE)
+    step2_pattern = re.compile(r'(^#{1,3}\s*)?Step\s*2|Missing\s*Requirement|누락된\s*요구사항', re.IGNORECASE)
+    step3_pattern = re.compile(r'(^#{1,3}\s*)?Step\s*3|Edge\s*Case|엣지\s*케이스', re.IGNORECASE)
+    step4_pattern = re.compile(r'(^#{1,3}\s*)?Step\s*4|Improvement|Actionable|개선\s*제안', re.IGNORECASE)
+
     for line in content.split("\n"):
-        # Step 헤더 감지
-        if "Step 1" in line or "Fatal Flaw" in line:
+        # Step 헤더 감지 (헤더 라인 자체는 content에서 제외)
+        if step1_pattern.search(line):
             if current_step:
                 steps[current_step] = "\n".join(current_content).strip()
             current_step = "fatal_flaw"
             current_content = []
-        elif "Step 2" in line or "Missing" in line:
+        elif step2_pattern.search(line):
             if current_step:
                 steps[current_step] = "\n".join(current_content).strip()
             current_step = "missing"
             current_content = []
-        elif "Step 3" in line or "Edge Case" in line:
+        elif step3_pattern.search(line):
             if current_step:
                 steps[current_step] = "\n".join(current_content).strip()
             current_step = "edge_cases"
             current_content = []
-        elif "Step 4" in line or "Improvement" in line or "Actionable" in line:
+        elif step4_pattern.search(line):
             if current_step:
                 steps[current_step] = "\n".join(current_content).strip()
             current_step = "improvements"
@@ -197,6 +235,39 @@ def render_round(round_data: dict, round_num: int):
         render_comparison(gpt_response, claude_response)
 
 
+def is_content_empty(content: str) -> bool:
+    """내용이 '없음'인지 확인 (다양한 형식 지원)"""
+    import re
+
+    if not content:
+        return True
+
+    cleaned = content.strip().lower()
+
+    # 직접 매칭
+    if cleaned in ["없음", "none", "-", "n/a", "해당 없음"]:
+        return True
+
+    # 마크다운 볼드/이탤릭 제거 후 체크
+    no_markdown = re.sub(r'\*+', '', cleaned).strip()
+    if no_markdown in ["없음", "none", "-", "n/a", "해당 없음"]:
+        return True
+
+    # "발견된 치명적 결함: 없음" 패턴 체크
+    if re.search(r'(결함|요구사항|케이스|제안)[:\s]*없음', cleaned):
+        # 단, 그 뒤에 실질적 내용이 있으면 False
+        lines = [l.strip() for l in content.split('\n') if l.strip()]
+        # 첫 줄만 "없음" 언급이고 나머지가 없으면 True
+        if len(lines) <= 1:
+            return True
+        # 나머지 줄이 "기존 구조를 활용한 점진적 개선 방향입니다" 같은 설명만 있으면 True
+        remaining = '\n'.join(lines[1:]).strip()
+        if len(remaining) < 100 and '없습니다' in remaining:
+            return True
+
+    return False
+
+
 def render_steps(steps: dict, full_response: str):
     """Step별 렌더링"""
     step_labels = {
@@ -215,8 +286,8 @@ def render_steps(steps: dict, full_response: str):
     for key, (label, step_num) in step_labels.items():
         content = steps.get(key, "")
 
-        # 없음 체크
-        is_empty = not content or content.strip().lower() in ["없음", "none", "-"]
+        # 없음 체크 (개선된 로직)
+        is_empty = is_content_empty(content)
 
         with st.expander(f"{label}", expanded=not is_empty):
             if is_empty:
@@ -391,8 +462,8 @@ def get_project_dir() -> Path:
 
 
 def render_diff_tab():
-    """Diff 탭 렌더링"""
-    st.subheader("Code Diff Viewer")
+    """Diff 탭 렌더링 - Git Diff + GPT/Claude 리뷰"""
+    st.subheader("Code Review")
 
     project_dir = get_project_dir()
     st.caption(f"📁 Project: {project_dir}")
@@ -439,10 +510,71 @@ def render_diff_tab():
 
     # Diff 렌더링
     if diff_text:
+        st.markdown("### Code Changes")
         renderer = DiffRenderer()
         renderer.render_diff(diff_text)
     else:
         st.info("No changes to display.")
+
+    # 리뷰 패널 (GPT/Claude)
+    st.divider()
+    st.markdown("### Reviews")
+
+    state_path = get_state_path()
+    if not state_path:
+        st.info("No review data. Run `debate.py start` to get GPT/Claude reviews.")
+        return
+
+    state = load_state(state_path)
+    if not state or not state.get("rounds"):
+        st.info("No review rounds yet.")
+        return
+
+    # 최신 라운드의 리뷰 표시
+    rounds = state.get("rounds", [])
+    latest_round = rounds[-1] if rounds else None
+
+    if not latest_round:
+        return
+
+    # 라운드 선택
+    if len(rounds) > 1:
+        round_idx = st.selectbox(
+            "Select Round",
+            options=list(range(len(rounds))),
+            index=len(rounds) - 1,
+            format_func=lambda x: f"Round {x + 1}",
+        )
+        selected_round = rounds[round_idx]
+    else:
+        selected_round = latest_round
+
+    # GPT / Claude 리뷰 side-by-side
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("#### GPT Review")
+        gpt_response = selected_round.get("gpt_response")
+        gpt_error = selected_round.get("gpt_error")
+
+        if gpt_error:
+            st.error(f"Error: {gpt_error}")
+        elif gpt_response:
+            st.markdown(gpt_response)
+        else:
+            st.info("No response")
+
+    with col2:
+        st.markdown("#### Claude Review")
+        claude_response = selected_round.get("claude_response")
+        claude_error = selected_round.get("claude_error")
+
+        if claude_error:
+            st.error(f"Error: {claude_error}")
+        elif claude_response:
+            st.markdown(claude_response)
+        else:
+            st.info("No response")
 
 
 def render_history_tab():
@@ -454,17 +586,202 @@ def render_history_tab():
     viewer.render()
 
 
+def render_plan_review_tab():
+    """계획 리뷰 탭 - Phase 1: GPT/Claude 계획 리뷰 (render_debate_tab 대체)"""
+    # 상태 파일 찾기
+    state_path = get_state_path()
+
+    if not state_path:
+        st.warning("토론 상태 파일을 찾을 수 없습니다.")
+        st.markdown("""
+        **사용법:**
+        ```bash
+        # 환경변수로 지정
+        DEBATE_STATE=/path/to/.cross-critic/debate_state.json streamlit run viewer/app.py
+
+        # 또는 인자로 지정
+        streamlit run viewer/app.py -- --state /path/to/debate_state.json
+        ```
+        """)
+
+        # 수동 입력 (세션에 저장)
+        col1, col2 = st.columns([4, 1])
+        with col1:
+            manual_path = st.text_input("상태 파일 경로 직접 입력:", key="manual_path_input")
+        with col2:
+            st.write("")  # 정렬용
+            st.write("")
+            if st.button("설정", key="set_path_btn"):
+                if manual_path and set_state_path(manual_path):
+                    st.rerun()
+                elif manual_path:
+                    st.error(f"파일이 존재하지 않습니다: {manual_path}")
+
+        if manual_path and Path(manual_path).exists():
+            state_path = Path(manual_path)
+            set_state_path(manual_path)
+        else:
+            return
+
+    # 상태 로드
+    state = load_state(state_path)
+
+    if not state:
+        st.error(f"상태 파일을 읽을 수 없습니다: {state_path}")
+        return
+
+    # 파일 경로 표시 + 변경 기능
+    col1, col2 = st.columns([6, 1])
+    with col1:
+        st.caption(f"📁 {state_path}")
+    with col2:
+        if st.button("변경", key="change_path_btn", help="다른 상태 파일 선택"):
+            # 세션에서 경로 삭제하여 수동 입력 UI 표시
+            session_key = "state_path_debate_state.json"
+            if session_key in st.session_state:
+                del st.session_state[session_key]
+            st.rerun()
+
+    rounds = state.get("rounds", [])
+
+    if not rounds:
+        st.info("아직 토론이 시작되지 않았습니다.")
+        return
+
+    # 라운드 탭 (원래 render_debate_tab 방식 - Step별 expander 포함)
+    if len(rounds) == 1:
+        render_round(rounds[0], 1)
+    else:
+        round_tabs = st.tabs([f"Round {i+1}" for i in range(len(rounds))])
+        for i, tab in enumerate(round_tabs):
+            with tab:
+                render_round(rounds[i], i + 1)
+
+    # 액션 버튼
+    render_actions(state, state_path)
+
+
+def render_code_review_tab():
+    """코드 리뷰 탭 - Phase 3: Git Diff + GPT/Claude 코드 리뷰"""
+    st.subheader("Code Review")
+    st.caption("Phase 3: GPT + Claude가 코드 변경사항을 리뷰합니다")
+
+    project_dir = get_project_dir()
+
+    # Git Diff 섹션
+    st.markdown("### Code Changes")
+
+    diff_source = st.radio(
+        "Diff Source",
+        options=["Git (staged)", "Git (unstaged)", "Custom"],
+        horizontal=True,
+    )
+
+    diff_text = ""
+
+    if diff_source == "Git (staged)":
+        try:
+            result = subprocess.run(
+                ["git", "diff", "--cached"],
+                capture_output=True,
+                text=True,
+                cwd=project_dir,
+            )
+            diff_text = result.stdout
+        except Exception as e:
+            st.error(f"Git diff failed: {e}")
+
+    elif diff_source == "Git (unstaged)":
+        try:
+            result = subprocess.run(
+                ["git", "diff"],
+                capture_output=True,
+                text=True,
+                cwd=project_dir,
+            )
+            diff_text = result.stdout
+        except Exception as e:
+            st.error(f"Git diff failed: {e}")
+
+    elif diff_source == "Custom":
+        diff_text = st.text_area(
+            "Paste unified diff here:",
+            height=150,
+            placeholder="diff --git a/file.py b/file.py\n...",
+        )
+
+    if diff_text:
+        renderer = DiffRenderer()
+        renderer.render_diff(diff_text)
+    else:
+        st.info("No code changes to display.")
+
+    # 리뷰 섹션
+    st.divider()
+    st.markdown("### Reviews")
+
+    state_path = get_code_state_path()
+    if not state_path:
+        st.info("No code review data. Run code review to get GPT/Claude feedback.")
+        st.code("uv run python scripts/parallel_review.py code /path/to/plan.md --project-dir .", language="bash")
+        return
+
+    state = load_state(state_path)
+    if not state or not state.get("rounds"):
+        st.info("No review rounds yet.")
+        return
+
+    rounds = state.get("rounds", [])
+
+    # 라운드 선택
+    if len(rounds) > 1:
+        round_idx = st.selectbox(
+            "Select Round",
+            options=list(range(len(rounds))),
+            index=len(rounds) - 1,
+            format_func=lambda x: f"Round {x + 1}",
+        )
+        selected_round = rounds[round_idx]
+    else:
+        selected_round = rounds[-1]
+
+    # GPT / Claude 리뷰 side-by-side
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("#### 🤖 GPT Review")
+        gpt_response = selected_round.get("gpt_response")
+        gpt_error = selected_round.get("gpt_error")
+        if gpt_error:
+            st.error(f"Error: {gpt_error}")
+        elif gpt_response:
+            st.markdown(gpt_response)
+        else:
+            st.info("No response")
+
+    with col2:
+        st.markdown("#### 🧠 Claude Review")
+        claude_response = selected_round.get("claude_response")
+        claude_error = selected_round.get("claude_error")
+        if claude_error:
+            st.error(f"Error: {claude_error}")
+        elif claude_response:
+            st.markdown(claude_response)
+        else:
+            st.info("No response")
+
+
 def main():
     st.title("🎭 Cross-Critic")
 
     # 메인 탭
-    tab_debate, tab_diff, tab_history = st.tabs(["Debate", "Diff", "History"])
+    tab_plan, tab_code, tab_history = st.tabs(["📋 Plan Review", "💻 Code Review", "📜 History"])
 
-    with tab_debate:
-        render_debate_tab()
+    with tab_plan:
+        render_plan_review_tab()
 
-    with tab_diff:
-        render_diff_tab()
+    with tab_code:
+        render_code_review_tab()
 
     with tab_history:
         render_history_tab()

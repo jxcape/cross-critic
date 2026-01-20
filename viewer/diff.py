@@ -10,6 +10,7 @@ from typing import Literal
 import re
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 
 @dataclass
@@ -177,10 +178,22 @@ class DiffRenderer:
                 white-space: pre-wrap;
                 word-break: break-all;
             }
+            .diff-line-prefix {
+                width: 20px;
+                padding: 0 4px;
+                text-align: center;
+                font-weight: bold;
+                flex-shrink: 0;
+                border-right: 1px solid #d0d7de;
+            }
             .diff-add {
                 background-color: #e6ffec;
             }
             .diff-add .diff-line-num {
+                background-color: #ccffd8;
+            }
+            .diff-add .diff-line-prefix {
+                color: #1a7f37;
                 background-color: #ccffd8;
             }
             .diff-remove {
@@ -189,8 +202,15 @@ class DiffRenderer:
             .diff-remove .diff-line-num {
                 background-color: #ffd7d5;
             }
+            .diff-remove .diff-line-prefix {
+                color: #cf222e;
+                background-color: #ffd7d5;
+            }
             .diff-context {
                 background-color: white;
+            }
+            .diff-context .diff-line-prefix {
+                color: #57606a;
             }
             .diff-stats {
                 display: inline-flex;
@@ -237,39 +257,53 @@ class DiffRenderer:
         adds = sum(1 for h in hunks for l in h.lines if l.type == "add")
         removes = sum(1 for h in hunks for l in h.lines if l.type == "remove")
 
-        # 파일별 expander
-        with st.expander(f"📄 {file_path}", expanded=True):
-            # 통계 표시
-            stats_html = f"""
-            <div class="diff-stats">
-                <span class="diff-stats-add">+{adds}</span>
-                <span class="diff-stats-remove">-{removes}</span>
-            </div>
-            """
-            st.markdown(stats_html, unsafe_allow_html=True)
+        # 파일 헤더
+        st.markdown(f"**📄 {file_path}** <span style='color:#1a7f37'>+{adds}</span> <span style='color:#cf222e'>-{removes}</span>", unsafe_allow_html=True)
 
-            # Diff 컨테이너
-            html_lines = ['<div class="diff-container">']
+        # Diff HTML 생성
+        html_lines = []
+        for hunk in hunks:
+            for line in hunk.lines:
+                old_num = str(line.old_line) if line.old_line else ""
+                new_num = str(line.new_line) if line.new_line else ""
 
-            for hunk in hunks:
-                for line in hunk.lines:
-                    line_class = f"diff-{line.type}"
-                    old_num = str(line.old_line) if line.old_line else ""
-                    new_num = str(line.new_line) if line.new_line else ""
+                # 타입별 스타일 (inline)
+                if line.type == "add":
+                    prefix = "+"
+                    bg_color = "#e6ffec"
+                    prefix_color = "#1a7f37"
+                    num_bg = "#ccffd8"
+                elif line.type == "remove":
+                    prefix = "-"
+                    bg_color = "#ffebe9"
+                    prefix_color = "#cf222e"
+                    num_bg = "#ffd7d5"
+                else:
+                    prefix = " "
+                    bg_color = "#ffffff"
+                    prefix_color = "#57606a"
+                    num_bg = "#f6f8fa"
 
-                    # HTML 이스케이프
-                    content = self._escape_html(line.content)
+                # HTML 이스케이프
+                content = self._escape_html(line.content)
 
-                    html_lines.append(f"""
-                    <div class="diff-line {line_class}">
-                        <div class="diff-line-num">{old_num}</div>
-                        <div class="diff-line-num">{new_num}</div>
-                        <div class="diff-line-content">{content}</div>
-                    </div>
-                    """)
+                html_lines.append(f'''<div style="display:flex; border-bottom:1px solid #eee; background-color:{bg_color}; font-family:'SF Mono',Monaco,monospace; font-size:13px; line-height:1.5;">
+<div style="min-width:45px; padding:0 8px; text-align:right; color:#57606a; background-color:{num_bg}; border-right:1px solid #d0d7de;">{old_num}</div>
+<div style="min-width:45px; padding:0 8px; text-align:right; color:#57606a; background-color:{num_bg}; border-right:1px solid #d0d7de;">{new_num}</div>
+<div style="min-width:20px; padding:0 4px; text-align:center; font-weight:bold; color:{prefix_color}; background-color:{num_bg}; border-right:1px solid #d0d7de;">{prefix}</div>
+<div style="flex:1; padding:0 8px; white-space:pre;">{content}</div>
+</div>''')
 
-            html_lines.append('</div>')
-            st.markdown('\n'.join(html_lines), unsafe_allow_html=True)
+        # 전체 HTML (iframe으로 렌더링)
+        full_html = f'''
+        <div style="border:1px solid #d0d7de; border-radius:6px; overflow:hidden; margin:10px 0;">
+            {''.join(html_lines)}
+        </div>
+        '''
+
+        # 높이 계산 (라인 수 * 줄높이)
+        height = max(100, len(html_lines) * 22 + 20)
+        components.html(full_html, height=height, scrolling=True)
 
     def _escape_html(self, text: str) -> str:
         """HTML 특수문자 이스케이프"""

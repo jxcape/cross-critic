@@ -141,9 +141,84 @@ def parallel_review_plan(
     reviewer = ParallelReviewer(claude_model=claude_model)
     result = reviewer.review(prompt, context_str if context_str else None)
 
+    # State 파일에 저장 (viewer 호환)
+    state_path = save_plan_review_state(plan_path, result)
+    print(f"💾 State saved: {state_path}", file=sys.stderr)
+
     if output_json:
         return json.dumps(result.to_dict(), indent=2, ensure_ascii=False)
     return result.synthesized
+
+
+def get_project_root(plan_path: str) -> Path:
+    """계획 파일 경로에서 프로젝트 루트 추출
+
+    .cross-critic 안에 있으면 부모 디렉토리 반환
+    """
+    plan_dir = Path(plan_path).parent
+    # .cross-critic 안에 있으면 부모 사용
+    if plan_dir.name == ".cross-critic":
+        return plan_dir.parent
+    return plan_dir
+
+
+def get_debate_state_path(plan_path: str) -> Path:
+    """Plan review (debate) state 파일 경로 반환"""
+    project_root = get_project_root(plan_path)
+    return project_root / ".cross-critic" / "debate_state.json"
+
+
+def get_code_review_state_path(plan_path: str) -> Path:
+    """Code review state 파일 경로 반환"""
+    project_root = get_project_root(plan_path)
+    return project_root / ".cross-critic" / "code_review_state.json"
+
+
+def save_plan_review_state(plan_path: str, result) -> Path:
+    """Plan review 결과를 debate_state.json에 저장 (viewer 호환)"""
+    state_path = get_debate_state_path(plan_path)
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # 새 라운드 데이터 (viewer/app.py 형식)
+    round_data = {
+        "round_number": 1,
+        "gpt_response": result.gpt_review.content if result.gpt_review else None,
+        "claude_response": result.claude_review.content if result.claude_review else None,
+        "gpt_error": result.gpt_error,
+        "claude_error": result.claude_error,
+    }
+
+    data = {
+        "review_type": "plan",
+        "plan_path": str(plan_path),
+        "rounds": [round_data],
+    }
+
+    state_path.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+    return state_path
+
+
+def save_code_review_state(plan_path: str, result) -> Path:
+    """Code review 결과를 state 파일에 저장"""
+    state_path = get_code_review_state_path(plan_path)
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # 새 라운드 데이터
+    round_data = {
+        "round_number": 1,
+        "gpt_response": result.gpt_review.content if result.gpt_review else None,
+        "claude_response": result.claude_review.content if result.claude_review else None,
+        "gpt_error": result.gpt_error,
+        "claude_error": result.claude_error,
+    }
+
+    data = {
+        "review_type": "code",
+        "rounds": [round_data],
+    }
+
+    state_path.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+    return state_path
 
 
 def parallel_review_code(
@@ -178,6 +253,10 @@ def parallel_review_code(
 
     reviewer = ParallelReviewer(claude_model=claude_model)
     result = reviewer.review(prompt, context_str if context_str else None)
+
+    # State 파일에 저장
+    state_path = save_code_review_state(plan_path, result)
+    print(f"💾 State saved: {state_path}", file=sys.stderr)
 
     if output_json:
         return json.dumps(result.to_dict(), indent=2, ensure_ascii=False)
