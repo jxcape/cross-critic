@@ -47,3 +47,10 @@ parallel_dev/
 worktree/
 *.state.json
 .cross-critic/
+CLAUDE.md
+BUGS.md
+PROGRESS.md
+specs/
+.claude/
+.mcp.json
+*.plist
